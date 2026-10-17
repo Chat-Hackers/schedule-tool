@@ -1,5 +1,5 @@
-git pull
-npm i
-npm run build-web
-npm run build
-pm2 restart events
+#!/bin/sh
+set -eu
+# Run from the repository root under your chosen process supervisor.
+npm test
+exec npm start
