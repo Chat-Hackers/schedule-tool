@@ -2,39 +2,46 @@ import 'dotenv/config';
 import express from "express";
 import * as fs from "fs";
 import path from "path";
+import { timingSafeEqual } from "node:crypto";
 import { v4 as uuidv4 } from "uuid";
-import handleMessage from "./messages";
-import { sendMessage } from './requests';
-import { tryGetEvent } from './events';
-import { getEventsByRoomId, insertEvent, removeEvent } from './duckdb';
-import beginSchedule from "./scheduler";
+import { preview, parseCSV } from "./schedule";
+import { ScheduledMessage } from "../types";
+import { startDuckDB, getMessagesAll, insertMessage, updateMessageStatus, updateMessageContent } from './duckdb';
+import beginSchedule, { isDemoMode } from "./scheduler";
 
-const { secret } = process.env;
+const { schedule_secret, admin_token, default_room_id } = process.env;
 
-const port = 5057;
+const port = Number(process.env.PORT) || 5062;
 
 const moduleRegistration = {
-  id: "events",
+  id: "schedule",
   uuid: uuidv4(),
   url: `http://localhost:${port}`,
-  emoji: "🗓️",
-  introduction: "Post links to events from eventbrite or luma to track them in the group.",
-  title: "Events Reminder",
-  description: "Sends reminders of upcoming events to the group",
-  secret,
-  event_types: [
-    "m.room.message"
-  ]
+  emoji: "⏰",
+  introduction: "Use the organiser dashboard to upload and schedule messages.",
+  title: "Message Scheduler",
+  description: "Schedules organiser messages to the group at set times",
+  secret: schedule_secret,
+  event_types: []
 }
 
 function generateRegistrationFile() {
   fs.writeFileSync(`./${moduleRegistration.id}.json`, JSON.stringify(moduleRegistration, null, 2));
 }
 
+function authorized(req: express.Request) {
+  if (!admin_token) return false;
+  const header = req.headers.authorization ?? "";
+  const a = Buffer.from(header);
+  const b = Buffer.from(`Bearer ${admin_token}`);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 async function start() {
 
   const app = express();
-  app.use(express.json());
+  await startDuckDB();
+  app.use(express.json({ limit: "2mb" }));
 
   app.get("/", async (req, res) => {
     const htmlPath = path.resolve(__dirname, "../../web/dist/index.html")
@@ -43,61 +50,87 @@ async function start() {
   })
 
   app.post("/", async (req, res) => {
-    const { event } = req.body;
-
-    let response: { message?: string } | undefined = {};
-
-    if (event.type === "m.room.message")
-      response = await handleMessage(event);
-
-    console.log(response)
-
-    res.send({ success: true, response });
+    // This tool sends on a schedule, not in response to chat events.
+    // Acknowledge the Hub contract without acting on the event.
+    res.send({ success: true, response: {} });
   });
 
-  app.get("/api/events", async (req, res) => {
-    const { roomId } = req.query;
+  app.get("/api/state", async (req, res) => {
+    if (!authorized(req)) return res.status(401).json({ error: "Enter the organiser access token shown in the server terminal." });
 
-    const eventUrls = await getEventsByRoomId(roomId as string);
-    const events = (
-      await Promise.all(
-        eventUrls.map(async (event) => {
-          const eventDetails = await tryGetEvent(event.event_url as string);
-          if (!eventDetails) return null;
-          return {
-            name: eventDetails.name,
-            startDate: eventDetails.startDate,
-            roomId: event.room_id as string,
-            url: event.event_url as string
-          };
-        })
-      )
-    ).filter((event) => event !== null).filter(event => event.roomId === roomId);
-
-    res.send(events);
+    const messages = await getMessagesAll();
+    res.json({ messages, demo: isDemoMode(), defaultRoomId: default_room_id ?? "" });
   })
 
-  app.post("/api/event", async (req, res) => {
-    const { roomId } = req.query;
-    const { url } = req.body;
+  app.post("/api/preview", async (req, res) => {
+    if (!authorized(req)) return res.status(401).json({ error: "Enter the organiser access token shown in the server terminal." });
 
-    await insertEvent(roomId as string, url);
-
-    res.send({ success: true })
+    const input = req.body;
+    if (input.csv !== undefined) input.rows = parseCSV(input.csv);
+    const messages = preview(input, await getMessagesAll());
+    res.json({ messages });
   })
 
-  app.delete("/api/event", async (req, res) => {
-    const { roomId } = req.query;
-    const { url } = req.body;
+  app.post("/api/queue", async (req, res) => {
+    if (!authorized(req)) return res.status(401).json({ error: "Enter the organiser access token shown in the server terminal." });
 
-    await removeEvent(roomId as string, url);
+    const input = req.body;
+    if (input.csv !== undefined) input.rows = parseCSV(input.csv);
+    const messages = preview(input, await getMessagesAll());
+    if (messages.some(m => m.issues?.length)) return res.status(400).json({ error: "Resolve all preview issues before enabling" });
 
-    res.send({ success: true })
+    const demo = isDemoMode();
+    for (const message of messages) {
+      const queued: ScheduledMessage = { ...message, status: "queued", mode: demo ? "demo" : "live", createdAt: new Date().toISOString() };
+      await insertMessage(queued);
+    }
+
+    res.json({ success: true });
+  })
+
+  app.post("/api/messages/:id/edit", async (req, res) => {
+    if (!authorized(req)) return res.status(401).json({ error: "Enter the organiser access token shown in the server terminal." });
+
+    const messages = await getMessagesAll();
+    const message = messages.find(m => m.id === req.params.id);
+    if (!message) return res.status(404).json({ error: "Message not found" });
+    if (!["queued", "failed"].includes(message.status)) return res.status(400).json({ error: "Only queued or failed messages can be changed" });
+
+    const { message: text, timestamp } = req.body ?? {};
+    const [updated] = preview({ roomId: message.roomId, groupName: message.groupName, timezone: message.timezone, rows: [{ message: text, timestamp }] }, messages.filter(x => x.id !== message.id));
+    if (updated.issues?.length) return res.status(400).json({ error: updated.issues.join("; ") });
+
+    await updateMessageContent(message.id, updated.message, updated.at);
+
+    res.json({ success: true });
+  })
+
+  app.post("/api/messages/:id/cancel", async (req, res) => {
+    if (!authorized(req)) return res.status(401).json({ error: "Enter the organiser access token shown in the server terminal." });
+
+    const messages = await getMessagesAll();
+    const message = messages.find(m => m.id === req.params.id);
+    if (!message) return res.status(404).json({ error: "Message not found" });
+    if (!["queued", "failed"].includes(message.status)) return res.status(400).json({ error: "Only queued or failed messages can be changed" });
+
+    await updateMessageStatus(message.id, "cancelled");
+
+    res.json({ success: true });
   })
 
   app.listen(port);
+
+  // A process restart can leave rows stuck in `sending`; they never completed.
+  await recoverSending();
+  setTimeout(beginSchedule, 2000);
 };
+
+async function recoverSending() {
+  const messages = await getMessagesAll();
+  for (const message of messages.filter(m => m.status === "sending")) {
+    await updateMessageStatus(message.id, "uncertain", "Server restarted during send. Check the group before scheduling a replacement.");
+  }
+}
 
 generateRegistrationFile();
 start();
-setTimeout(beginSchedule, 2000)

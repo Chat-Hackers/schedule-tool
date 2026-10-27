@@ -1,0 +1,90 @@
+import { describe, test, expect, beforeAll, afterAll } from "vitest";
+import { spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+let serverUp = false;
+let child: ChildProcess;
+let dir: string;
+const { promise: serverExit, resolve: exited } = Promise.withResolvers<void>();
+
+type ApiResponse = {
+    status: number;
+    data: { messages?: { id: string; status: string }[]; error?: string; success?: boolean };
+};
+
+async function call(route: string, body?: unknown, auth = true) {
+    const res = await fetch("http://127.0.0.1:15057" + route, {
+        method: body ? "POST" : "GET",
+        headers: { "Content-Type": "application/json", ...(auth ? { Authorization: "Bearer integration-test" } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    return { status: res.status, data: await res.json() } as ApiResponse;
+}
+
+beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-test-"));
+    child = spawn(process.execPath, ["dist/src/index.js"], {
+        env: { ...process.env, PORT: "15057", ADMIN_TOKEN: "integration-test", SEND_MODE: "demo", DUCKDB_DATA_DIR: dir, schedule_secret: "test-secret" },
+        stdio: "pipe",
+    });
+    child.stderr?.on("data", (chunk) => process.stderr.write(chunk));
+    child.once("exit", exited);
+
+    // The server under test owns the clock (toad-scheduler tick); poll its real
+    // state endpoint until it accepts connections instead of guessing a delay.
+    for (let i = 0; i < 80 && !serverUp; i++) {
+        try {
+            await call("/api/state");
+            serverUp = true;
+        } catch {
+            await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+    }
+    expect(serverUp).toBe(true);
+}, 30000);
+
+afterAll(async () => {
+    if (child?.exitCode === null) {
+        child.kill();
+        await serverExit;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+describe("schedule-tool API integration", () => {
+    test("demo API previews, edits, cancels, processes and persists with access control", async () => {
+        expect((await call("/api/state", null, false)).status).toBe(401);
+
+        const input = {
+            roomId: "!test:example.org",
+            groupName: "Test",
+            timezone: "Europe/London",
+            rows: [1, 2, 3].map((n) => ({ message: "Message " + n, timestamp: new Date(Date.now() + 61000).toISOString() })),
+        };
+        expect((await call("/api/preview", input)).data.messages?.length).toBe(3);
+
+        expect((await call("/api/queue", input)).status).toBe(200);
+        expect((await call("/api/queue", input)).status).toBe(400); // duplicates
+
+        let messages = (await call("/api/state")).data.messages ?? [];
+        expect(messages.length).toBe(3);
+
+        expect((await call(`/api/messages/${messages[0].id}/edit`, { message: "Edited", timestamp: new Date(Date.now() + 61000).toISOString() })).status).toBe(200);
+        expect((await call(`/api/messages/${messages[1].id}/cancel`, {})).status).toBe(200);
+
+        // Real wall-clock wait is unavoidable here: the production scheduler
+        // drains `at <= now` on a 1-minute interval against the system clock.
+        // Poll the state endpoint for the awaited condition instead of a
+        // fixed sleep so the test ends as soon as the queue settles.
+        let statuses: string[] = [];
+        for (let i = 0; i < 80; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            messages = (await call("/api/state")).data.messages ?? [];
+            statuses = messages.map((m) => m.status).filter((s) => ["simulated", "cancelled"].includes(s));
+            if (statuses.length === 3) break;
+        }
+        expect(statuses.sort()).toEqual(["cancelled", "simulated", "simulated"]);
+    }, 120000);
+});

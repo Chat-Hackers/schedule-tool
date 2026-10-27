@@ -1,34 +1,51 @@
-body {
-  font-family: sans-serif;
-  background-color: aquamarine;
-}
-
-#root {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-p {
-  margin: 0px;
-}
-
-#change-container {
-  display: flex;
-  flex-direction: column;
-  margin-top: 20px;
-}
-
-button {
-  margin: 10px;
-  background: #1d9e75;
-  border: none;
-  border-radius: 5px;
-  padding: 5px;
-  cursor: pointer;
-  color: white;
-}
-
-button:hover {
-  background: #177557;
-}
+:root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#19382e;background:#f5f5ef;font-synthesis:none}
+*{box-sizing:border-box}
+body{margin:0}
+#root header{height:90px;border-bottom:1px solid #d8ddd4;display:flex;align-items:center;justify-content:space-between;padding:0 max(5vw,24px);background:#fcfcf8}
+.brand{display:flex;gap:12px;align-items:center;text-decoration:none;color:inherit;font-size:30px}
+.brand span{font-size:14px;font-weight:800;letter-spacing:2px}
+.brand small{display:block;font-size:11px;font-weight:400;letter-spacing:0;margin-top:5px}
+#root main{max-width:1240px;margin:auto;padding:48px 28px}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:2px;color:#58745d}
+h1{font-size:clamp(40px,5vw,66px);line-height:1.04;letter-spacing:-3px;margin:22px 0}
+h2{font-size:20px;margin:0 0 6px;letter-spacing:-.5px}
+p{line-height:1.6}
+.intro>p:last-child{color:#66746b}
+.badge{font-size:12px;background:#e9edc7;color:#374915;border-radius:30px;padding:9px 14px}
+.access{display:flex;gap:12px;align-items:end;max-width:620px;margin:28px 0}
+.access label{flex:1}
+.layout{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}
+.panel{border:1px solid #d9dfd4;border-radius:18px;background:#fffefa;padding:28px}
+.section-title{display:flex;gap:14px;align-items:start;margin-bottom:26px}
+.section-title p{margin:0;font-size:13px;color:#708074}
+.step{border:1px solid #bdccbc;border-radius:50%;padding:9px;font-size:12px}
+.section-title button{margin-left:auto}
+label{display:block;font-size:12px;font-weight:650;margin:16px 0 8px}
+input,select,textarea{display:block;width:100%;border:1px solid #cbd4c8;border-radius:8px;padding:12px;font:inherit;font-size:14px;color:#213e32;background:white;margin-top:7px}
+textarea{resize:vertical;line-height:1.5}
+button{background:#28553e;color:#fff;border:0;border-radius:8px;padding:13px 19px;font:inherit;font-size:13px;font-weight:650;cursor:pointer}
+button:hover{filter:brightness(.92)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.secondary{background:#edf0e5;color:#31523b}
+.hint{font-size:12px;color:#748073;line-height:1.6}
+.upload{border:1px dashed #a4b6a0;border-radius:10px;padding:20px;background:#f4f6ec;margin:22px 0}
+.upload p{font-size:13px;margin:5px 0}
+.upload input{background:transparent;border:0;padding:8px 0}
+.empty{padding:55px 12px;text-align:center;color:#7a887a;font-size:15px;line-height:1.8}
+.empty small{font-size:12px}
+.check{display:flex;gap:10px;font-weight:400;align-items:start;line-height:1.6}
+.check input{width:17px;margin-top:3px}
+.message{border-bottom:1px solid #e0e5da;padding:18px 0}
+.message p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}
+.message small{color:#71816e}
+.message time{font-size:12px;font-weight:700}
+.message .error{font-size:12px;color:#a13925}
+.message button{margin:8px 8px 0 0;padding:8px 12px}
+.status{display:inline-block;font-size:11px;padding:4px 8px;border-radius:5px;background:#edf0df;margin-left:8px}
+.queue{margin-top:24px}
+#notice{min-height:25px;color:#814029;font-size:14px}
+footer{display:flex;justify-content:space-between;padding:30px 0;font-size:10px;letter-spacing:1.5px;color:#7b8978}
+dialog{border:1px solid #bdccbc;border-radius:15px;width:min(540px,90vw);padding:30px}
+dialog::backdrop{background:#17382d80}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #98af50;outline-offset:3px}
+@media(max-width:760px){.layout{grid-template-columns:1fr}.panel{padding:20px}#root main{padding:28px 16px}.access{flex-direction:column;align-items:stretch}footer{gap:20px}#root header{padding:0 20px}}

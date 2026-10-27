@@ -1,7 +1,5 @@
 # Generated files
-events.json
-message-scheduler.json
-scheduler-data.json*
+schedule.json
 *duckdb.db
 *duckdb.db.wal
 
