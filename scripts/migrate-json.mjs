@@ -3,7 +3,7 @@
 //
 //   node scripts/migrate-json.mjs [path/to/scheduler-data.json]
 //
-// Reads rows with status queued/simulated/accepted/uncertain/failed/cancelled
+// Reads rows with status queued/accepted/uncertain/failed/cancelled
 // and inserts any that are not already present (matched by id).
 import { DuckDBInstance } from "@duckdb/node-api";
 import fs from "node:fs";
@@ -31,7 +31,7 @@ for (const m of rows) {
     if (Number(count) > 0) continue;
 
     const insert = await connection.prepare(
-        "INSERT INTO Messages values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);"
+        "INSERT INTO Messages values ($1, $2, $3, $4, $5, $6, $7, $8, $9);"
     );
     insert.bindVarchar(1, m.id);
     insert.bindVarchar(2, m.roomId);
@@ -39,10 +39,9 @@ for (const m of rows) {
     insert.bindVarchar(4, m.message ?? "");
     insert.bindVarchar(5, m.at ?? "");
     insert.bindVarchar(6, m.status ?? "cancelled");
-    insert.bindVarchar(7, m.mode ?? "demo");
-    insert.bindVarchar(8, m.error ?? "");
-    insert.bindVarchar(9, m.createdAt ?? "");
-    insert.bindVarchar(10, m.completedAt ?? "");
+    insert.bindVarchar(7, m.error ?? "");
+    insert.bindVarchar(8, m.createdAt ?? "");
+    insert.bindVarchar(9, m.completedAt ?? "");
     await insert.run();
     inserted++;
 }

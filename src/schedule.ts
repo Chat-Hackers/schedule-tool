@@ -70,7 +70,6 @@ export function preview(input: PreviewInput, existing: ScheduledMessage[] = [], 
             message: String(r.message || "").trim(),
             at,
             status: "draft",
-            mode: "demo",
             row: i + 2,
             issues
         };

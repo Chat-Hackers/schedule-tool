@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { preview, parseCSV } from "./schedule";
 import { ScheduledMessage } from "../types";
 import { startDuckDB, getMessagesAll, insertMessage, updateMessageStatus, updateMessageContent } from './duckdb';
-import beginSchedule, { isDemoMode } from "./scheduler";
+import beginSchedule from "./scheduler";
 
 const { schedule_secret } = process.env;
 
@@ -49,7 +49,7 @@ async function start() {
 
   app.get("/api/state", async (req, res) => {
     const messages = await getMessagesAll();
-    res.json({ messages, demo: isDemoMode() });
+    res.json({ messages });
   })
 
   app.post("/api/preview", async (req, res) => {
@@ -70,9 +70,8 @@ async function start() {
       const messages = preview(input, await getMessagesAll());
       if (messages.some(m => m.issues?.length)) return res.status(400).json({ error: "Resolve all preview issues before enabling" });
 
-      const demo = isDemoMode();
       for (const message of messages) {
-        const queued: ScheduledMessage = { ...message, status: "queued", mode: demo ? "demo" : "live", createdAt: new Date().toISOString() };
+        const queued: ScheduledMessage = { ...message, status: "queued", createdAt: new Date().toISOString() };
         await insertMessage(queued);
       }
 

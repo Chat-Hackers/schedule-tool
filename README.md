@@ -31,17 +31,14 @@ Copy `.env.example` to `.env`:
 | --- | --- |
 | `schedule_secret` | Shared secret the Hub uses to authenticate sends from this tool |
 | `dashboard_url` | Tool Hub origin, e.g. `your-hub.example` or `localhost:8138` |
-| `SEND_MODE` | `live` to enable real sends; anything else is demo |
 | `DUCKDB_DATA_DIR` | Directory for `schedule_duckdb.db`; defaults to the repo root |
 | `PORT` | Dashboard/server port; defaults to 5062 |
 
 ## Delivery states
 
 - `queued`: scheduled, not yet sent.
-- `simulated`: demo mode only. Nothing sent.
 - `accepted`: Hub accepted the request. The Hub does not await Matrix delivery, so this is **not a delivery receipt**.
 - `uncertain`: request failed, timed out, or the server restarted during sending. Inspect the destination group before scheduling a replacement. No automatic retry avoids blindly duplicating a possible send.
-- `failed`: entry could not run because send mode changed. Edit to review and requeue, or cancel it.
 - `cancelled`: will not send. Messages already sending or accepted cannot be edited or recalled.
 
 ## Operating notes
@@ -57,6 +54,6 @@ Copy `.env.example` to `.env`:
 npm test
 ```
 
-Tests cover quoted CSV parsing, explicit offsets, past times, duplicates, rejected Hub responses, preview/queue/edit/cancel, simulated scheduling and durable queue data. Browser rendering and real WhatsApp delivery require separate checks.
+Tests cover quoted CSV parsing, explicit offsets, past times, duplicates, rejected Hub responses, preview/queue/edit/cancel, scheduled sending and durable queue data. Browser rendering and real WhatsApp delivery require separate checks.
 
 Context: [Chat Hackers](https://github.com/Chat-Hackers), [events-tool](https://github.com/Chat-Hackers/events-tool), [tool-hub](https://github.com/Chat-Hackers/tool-hub).

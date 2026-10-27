@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
+import http from "node:http";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +9,15 @@ let serverUp = false;
 let child: ChildProcess;
 let dir: string;
 const { promise: serverExit, resolve: exited } = Promise.withResolvers<void>();
+
+// Stub Tool Hub: accepts the /api/send contract so the scheduler's live
+// outbound requests resolve as accepted.
+const hub = http.createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ success: true }));
+});
+const hubReady = new Promise<void>((resolve) => hub.listen(8999, "127.0.0.1", resolve));
+
 
 type ApiResponse = {
     status: number;
@@ -24,9 +34,10 @@ async function call(route: string, body?: unknown) {
 }
 
 beforeAll(async () => {
+    await hubReady;
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-test-"));
     child = spawn(process.execPath, ["dist/src/index.js"], {
-        env: { ...process.env, PORT: "15057", SEND_MODE: "demo", DUCKDB_DATA_DIR: dir, schedule_secret: "test-secret" },
+        env: { ...process.env, PORT: "15057", DUCKDB_DATA_DIR: dir, schedule_secret: "test-secret", dashboard_url: "localhost:8999" },
         stdio: "pipe",
     });
     child.stderr?.on("data", (chunk) => process.stderr.write(chunk));
@@ -50,11 +61,13 @@ afterAll(async () => {
         child.kill();
         await serverExit;
     }
+    const hubClosed = new Promise<void>((resolve) => hub.close(() => resolve()));
+    await hubClosed;
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
 describe("schedule-tool API integration", () => {
-    test("demo API previews, edits, cancels and processes queue", async () => {
+    test("API previews, edits, cancels and sends queue via the Hub", async () => {
         const room = encodeURIComponent("!test:example.org");
         const input = {
             timezone: "Europe/London",
@@ -79,9 +92,9 @@ describe("schedule-tool API integration", () => {
         for (let i = 0; i < 80; i++) {
             await new Promise((resolve) => setTimeout(resolve, 1000));
             messages = (await call("/api/state")).data.messages ?? [];
-            statuses = messages.map((m) => m.status).filter((s) => ["simulated", "cancelled"].includes(s));
+            statuses = messages.map((m) => m.status).filter((s) => ["accepted", "cancelled"].includes(s));
             if (statuses.length === 3) break;
         }
-        expect(statuses.sort()).toEqual(["cancelled", "simulated", "simulated"]);
+        expect(statuses.sort()).toEqual(["accepted", "accepted", "cancelled"]);
     }, 120000);
 });

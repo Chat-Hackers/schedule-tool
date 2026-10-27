@@ -47,7 +47,6 @@ export default function App() {
     const [timezone, setTimezone] = useState(TIMEZONES[0]);
     const [csv, setCsv] = useState("");
 
-    const [mode, setMode] = useState("Connecting");
     const [previewList, setPreviewList] = useState<ScheduledMessage[]>([]);
     const [previewed, setPreviewed] = useState(false);
     const [confirmed, setConfirmed] = useState(false);
@@ -71,7 +70,6 @@ export default function App() {
     async function refresh() {
         const data: StateResponse = await getState();
         setQueue(data.messages.slice().sort((a, b) => a.at.localeCompare(b.at)));
-        setMode(data.demo ? "DEMO · no live sends" : "LIVE · Tool Hub");
     }
 
     async function doPreview() {
@@ -168,7 +166,6 @@ export default function App() {
         <>
             <header>
                 <a href="/" className="brand">◷ <span>CHAT HACKERS<small>Organiser tools</small></span></a>
-                <span className="badge">{mode}</span>
             </header>
             <main>
                 <div className="intro">
@@ -229,7 +226,7 @@ export default function App() {
                                     I checked the time zone and message order.
                                 </label>
                                 <button disabled={!previewed || !confirmed} onClick={enable}>Enable schedule</button>
-                                <p className="hint">Demo mode simulates sends. Live mode submits messages to the Hub. Keep the server running for scheduled messages to process.</p>
+                                <p className="hint">Enabling submits messages to the Hub for real sends. Keep the server running for scheduled messages to process.</p>
                             </section>
                         </div>
                         <section className="panel queue">

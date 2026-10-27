@@ -10,7 +10,6 @@ export type MessageStatus =
     | "draft"
     | "queued"
     | "sending"
-    | "simulated"
     | "accepted"
     | "uncertain"
     | "failed"
@@ -23,7 +22,6 @@ export type ScheduledMessage = {
     message: string;
     at: string;
     status: MessageStatus;
-    mode: "demo" | "live";
     row?: number;
     issues?: string[];
     error?: string;

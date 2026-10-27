@@ -5,7 +5,6 @@ const BASE_URL = `${origin}${pathname}`;
 
 export type StateResponse = {
     messages: ScheduledMessage[];
-    demo: boolean;
 };
 
 export type ScheduleInput = {

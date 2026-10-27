@@ -18,7 +18,7 @@ export async function startDuckDB() {
         {
             name: "Messages",
             creationCommand:
-                "CREATE TABLE Messages (id VARCHAR NOT NULL, room_id VARCHAR NOT NULL, timezone VARCHAR NOT NULL, message VARCHAR NOT NULL, send_at VARCHAR NOT NULL, status VARCHAR NOT NULL, mode VARCHAR NOT NULL, error VARCHAR, created_at VARCHAR, completed_at VARCHAR);",
+                "CREATE TABLE Messages (id VARCHAR NOT NULL, room_id VARCHAR NOT NULL, timezone VARCHAR NOT NULL, message VARCHAR NOT NULL, send_at VARCHAR NOT NULL, status VARCHAR NOT NULL, error VARCHAR, created_at VARCHAR, completed_at VARCHAR);",
         }
     ]
 
@@ -55,7 +55,6 @@ function rowToMessage(row: Record<string, unknown>): ScheduledMessage {
         message: row.message as string,
         at: row.send_at as string,
         status: row.status as MessageStatus,
-        mode: row.mode as "demo" | "live",
         error: (row.error as string) ?? undefined,
         createdAt: (row.created_at as string) ?? undefined,
         completedAt: (row.completed_at as string) ?? undefined,
@@ -71,7 +70,7 @@ export async function getMessagesAll(): Promise<ScheduledMessage[]> {
 }
 
 export async function insertMessage(message: ScheduledMessage) {
-    const insert = `INSERT INTO Messages values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);`;
+    const insert = `INSERT INTO Messages values ($1, $2, $3, $4, $5, $6, $7, $8, $9);`;
     await withWriteLock(async () => {
         const prepared = await connection.prepare(insert);
         prepared.bindVarchar(1, message.id);
@@ -80,10 +79,9 @@ export async function insertMessage(message: ScheduledMessage) {
         prepared.bindVarchar(4, message.message);
         prepared.bindVarchar(5, message.at);
         prepared.bindVarchar(6, message.status);
-        prepared.bindVarchar(7, message.mode);
-        prepared.bindVarchar(8, message.error ?? "");
-        prepared.bindVarchar(9, message.createdAt ?? "");
-        prepared.bindVarchar(10, message.completedAt ?? "");
+        prepared.bindVarchar(7, message.error ?? "");
+        prepared.bindVarchar(8, message.createdAt ?? "");
+        prepared.bindVarchar(9, message.completedAt ?? "");
         await prepared.run();
     });
     return;
