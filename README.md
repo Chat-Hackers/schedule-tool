@@ -30,7 +30,7 @@ Copy `.env.example` to `.env`:
 | Variable | Purpose |
 | --- | --- |
 | `schedule_secret` | Shared secret the Hub uses to authenticate sends from this tool |
-| `dashboard_url` | Tool Hub origin, e.g. `your-hub.example` or `localhost:8138` |
+| `dashboard_url` | Tool Hub origin **without scheme**, e.g. `your-hub.example` or `localhost:8138` |
 | `DUCKDB_DATA_DIR` | Directory for `schedule_duckdb.db`; defaults to the repo root |
 | `PORT` | Dashboard/server port; defaults to 5062 |
 

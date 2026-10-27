@@ -48,3 +48,24 @@ describe("sendMessage hub contract", () => {
         await expect(sendMessage("!test:example.org", "Hello")).rejects.toThrow(/Hub HTTP 502/);
     });
 });
+
+describe("sendMessage url construction", () => {
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.unstubAllGlobals();
+    });
+
+    test("scheme-prefixed and schemeless dashboard_url both hit http for localhost", async () => {
+        for (const value of ["localhost:8138", "http://localhost:8138"]) {
+            vi.stubEnv("dashboard_url", value);
+            vi.stubEnv("schedule_secret", "s");
+            vi.resetModules();
+            const { sendMessage } = await import("./requests.js");
+            vi.stubGlobal("fetch", vi.fn(async (url: string | URL) => {
+                expect(String(url)).toBe("http://localhost:8138/api/send?roomId=!r&toolId=schedule&secret=s");
+                return { ok: true, json: async () => ({ success: true }) };
+            }));
+            await sendMessage("!r", "Hello");
+        }
+    });
+});

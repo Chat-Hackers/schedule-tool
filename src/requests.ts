@@ -1,6 +1,9 @@
 const { schedule_secret, dashboard_url } = process.env;
 
-const baseUrl = dashboard_url?.includes("localhost") ? `http://${dashboard_url}` : `https://${dashboard_url}`;
+// Family convention: dashboard_url is schemeless (e.g. localhost:8138); the
+// scheme is chosen here. Tolerate a full origin being pasted anyway.
+const origin = dashboard_url?.replace(/^https?:\/\//, "");
+const baseUrl = origin?.includes("localhost") ? `http://${origin}` : `https://${origin}`;
 
 export async function sendMessage(roomId: string, message: string) {
     const response = await fetch(`${baseUrl}/api/send?roomId=${roomId}&toolId=schedule&secret=${schedule_secret}`, {
