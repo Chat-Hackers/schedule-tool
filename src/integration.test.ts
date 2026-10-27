@@ -14,10 +14,10 @@ type ApiResponse = {
     data: { messages?: { id: string; status: string }[]; error?: string; success?: boolean };
 };
 
-async function call(route: string, body?: unknown, auth = true) {
+async function call(route: string, body?: unknown) {
     const res = await fetch("http://127.0.0.1:15057" + route, {
         method: body ? "POST" : "GET",
-        headers: { "Content-Type": "application/json", ...(auth ? { Authorization: "Bearer integration-test" } : {}) },
+        headers: { "Content-Type": "application/json" },
         ...(body ? { body: JSON.stringify(body) } : {}),
     });
     return { status: res.status, data: await res.json() } as ApiResponse;
@@ -26,7 +26,7 @@ async function call(route: string, body?: unknown, auth = true) {
 beforeAll(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-test-"));
     child = spawn(process.execPath, ["dist/src/index.js"], {
-        env: { ...process.env, PORT: "15057", ADMIN_TOKEN: "integration-test", SEND_MODE: "demo", DUCKDB_DATA_DIR: dir, schedule_secret: "test-secret" },
+        env: { ...process.env, PORT: "15057", SEND_MODE: "demo", DUCKDB_DATA_DIR: dir, schedule_secret: "test-secret" },
         stdio: "pipe",
     });
     child.stderr?.on("data", (chunk) => process.stderr.write(chunk));
@@ -54,19 +54,16 @@ afterAll(async () => {
 });
 
 describe("schedule-tool API integration", () => {
-    test("demo API previews, edits, cancels, processes and persists with access control", async () => {
-        expect((await call("/api/state", null, false)).status).toBe(401);
-
+    test("demo API previews, edits, cancels and processes queue", async () => {
+        const room = encodeURIComponent("!test:example.org");
         const input = {
-            roomId: "!test:example.org",
-            groupName: "Test",
             timezone: "Europe/London",
             rows: [1, 2, 3].map((n) => ({ message: "Message " + n, timestamp: new Date(Date.now() + 61000).toISOString() })),
         };
-        expect((await call("/api/preview", input)).data.messages?.length).toBe(3);
+        expect((await call(`/api/preview?roomId=${room}`, input)).data.messages?.length).toBe(3);
 
-        expect((await call("/api/queue", input)).status).toBe(200);
-        expect((await call("/api/queue", input)).status).toBe(400); // duplicates
+        expect((await call(`/api/queue?roomId=${room}`, input)).status).toBe(200);
+        expect((await call(`/api/queue?roomId=${room}`, input)).status).toBe(400); // duplicates
 
         let messages = (await call("/api/state")).data.messages ?? [];
         expect(messages.length).toBe(3);

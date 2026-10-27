@@ -1,13 +1,13 @@
 import "./App.css";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import {
     cancelMessage,
     editMessage,
+    getRoomName,
     getState,
-    getToken,
     previewMessages,
     queueMessages,
-    setToken,
     type ScheduleInput,
     type StateResponse,
 } from "./requests";
@@ -27,7 +27,7 @@ function MessageCard({ message, onEdit, onCancel }: { message: ScheduledMessage;
             <time>{formatTime(message)}</time>
             {message.status !== "draft" && <span className="status">{message.status}</span>}
             <br />
-            <small>{message.groupName} · {message.roomId} · {message.timezone}</small>
+            <small>{message.roomId} · {message.timezone}</small>
             <p>{message.message}</p>
             {[...(message.issues ?? []), ...(message.error ? [message.error] : [])].map((issue, i) => (
                 <p key={i} className="error">{issue}</p>
@@ -39,12 +39,11 @@ function MessageCard({ message, onEdit, onCancel }: { message: ScheduledMessage;
 }
 
 export default function App() {
-    const [tokenDraft, setTokenDraft] = useState(getToken());
-    const [connected, setConnected] = useState(false);
+    const [searchParams] = useSearchParams();
+    const roomId = searchParams.get("roomId");
+    const [roomName, setRoomName] = useState<string | undefined>(undefined);
     const [notice, setNotice] = useState("");
 
-    const [groupName, setGroupName] = useState("Hack day · test group");
-    const [roomId, setRoomId] = useState("");
     const [timezone, setTimezone] = useState(TIMEZONES[0]);
     const [csv, setCsv] = useState("");
 
@@ -60,7 +59,7 @@ export default function App() {
     const [editError, setEditError] = useState("");
 
     function input(): ScheduleInput {
-        return { roomId, groupName, timezone, csv };
+        return { timezone, csv };
     }
 
     function invalidate() {
@@ -73,24 +72,12 @@ export default function App() {
         const data: StateResponse = await getState();
         setQueue(data.messages.slice().sort((a, b) => a.at.localeCompare(b.at)));
         setMode(data.demo ? "DEMO · no live sends" : "LIVE · Tool Hub");
-        if (!roomId && data.defaultRoomId) setRoomId(data.defaultRoomId);
-    }
-
-    async function connect() {
-        const token = tokenDraft.trim();
-        setToken(token);
-        try {
-            await refresh();
-            setConnected(true);
-            setNotice("Connected. Ready to prepare your schedule.");
-        } catch (e) {
-            setNotice(e instanceof Error ? e.message : String(e));
-        }
     }
 
     async function doPreview() {
+        if (!roomId) return;
         try {
-            const data = await previewMessages(input());
+            const data = await previewMessages(roomId, input());
             setPreviewList(data.messages);
             const ready = data.messages.every(m => !m.issues?.length);
             setPreviewed(ready);
@@ -103,8 +90,9 @@ export default function App() {
     }
 
     async function enable() {
+        if (!roomId) return;
         try {
-            await queueMessages(input());
+            await queueMessages(roomId, input());
             invalidate();
             setCsv("");
             setNotice("Schedule enabled. Your queue will update as messages are processed.");
@@ -122,7 +110,6 @@ export default function App() {
             "Thanks for joining us. Share what you built!",
         ];
         setCsv("timestamp,message\n" + rows.map((m, i) => `${new Date(Date.now() + (i + 1) * 60000).toISOString()},"${m}"`).join("\n"));
-        if (!roomId) setRoomId("!demo-test-group:matrix.campaignlab.uk");
         invalidate();
     }
 
@@ -167,14 +154,15 @@ export default function App() {
     }
 
     useEffect(() => {
-        if (getToken()) {
-            refresh().catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
-            const interval = setInterval(() => {
-                refresh().catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
-            }, 5000);
-            return () => clearInterval(interval);
+        refresh().catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+        if (roomId) {
+            getRoomName(roomId).then(setRoomName).catch(() => setRoomName(undefined));
         }
-    }, []);
+        const interval = setInterval(() => {
+            refresh().catch((e) => setNotice(e instanceof Error ? e.message : String(e)));
+        }, 5000);
+        return () => clearInterval(interval);
+    }, [roomId]);
 
     return (
         <>
@@ -188,90 +176,80 @@ export default function App() {
                     <h1>Right message.<br />Right moment.</h1>
                     <p>Prepare your messages now. Give your group a quieter evening.</p>
                 </div>
-                <div className="access">
-                    <label>Organiser access token
-                        <input type="password" autoComplete="off" placeholder="Copy from your server terminal"
-                            value={tokenDraft} onChange={(e) => setTokenDraft(e.target.value)} />
-                    </label>
-                    <button onClick={connect}>Connect</button>
-                </div>
-                <p id="notice" role="status" aria-live="polite">{notice}</p>
-                <div className="layout">
-                    <section className="panel">
-                        <div className="section-title">
-                            <span className="step">01</span>
-                            <div>
-                                <h2>Prepare your schedule</h2>
-                                <p>One group, one time zone, a few well-timed messages.</p>
+                {!roomId ? (
+                    <div className="panel"><div className="empty">Open this dashboard from the Chat Hackers hub so the room is set in the address.</div></div>
+                ) : (
+                    <>
+                        <p id="notice" role="status" aria-live="polite">{notice}</p>
+                        <p className="hint">Scheduling {roomName ? `messages for ${roomName}` : `messages for ${roomId}`} ({roomId})</p>
+                        <div className="layout">
+                            <section className="panel">
+                                <div className="section-title">
+                                    <span className="step">01</span>
+                                    <div>
+                                        <h2>Prepare your schedule</h2>
+                                        <p>One time zone, a few well-timed messages.</p>
+                                    </div>
+                                </div>
+                                <label>Preview time zone
+                                    <select value={timezone} onChange={(e) => { setTimezone(e.target.value); invalidate(); }}>
+                                        {TIMEZONES.map(tz => <option key={tz}>{tz}</option>)}
+                                    </select>
+                                </label>
+                                <div className="upload">
+                                    <strong>Bring your messages</strong>
+                                    <p>Upload a CSV, or paste it below.</p>
+                                    <input type="file" accept=".csv,text/csv" aria-label="Upload messages CSV"
+                                        onChange={(e) => loadFile(e.target.files)} />
+                                    <button className="secondary" onClick={loadSample}>Load demo messages</button>
+                                </div>
+                                <label>CSV contents
+                                    <textarea rows={8} placeholder={"timestamp,message\n2026-10-17T18:00:00+01:00,Welcome everyone!"}
+                                        value={csv} onChange={(e) => { setCsv(e.target.value); invalidate(); }} />
+                                </label>
+                                <p className="hint">Columns: timestamp,message. Include an explicit UTC offset or Z in every timestamp. The time zone above controls the preview; it does not reinterpret your CSV.</p>
+                                <button onClick={doPreview}>Preview messages →</button>
+                            </section>
+                            <section className="panel">
+                                <div className="section-title">
+                                    <span className="step">02</span>
+                                    <div>
+                                        <h2>Check before you send</h2>
+                                        <p>Review local times and message order.</p>
+                                    </div>
+                                </div>
+                                {previewList.length === 0 ? (
+                                    <div className="empty">Your messages will appear here.<br /><small>Upload a CSV to put your plan in order.</small></div>
+                                ) : (
+                                    previewList.map(m => <MessageCard key={m.id} message={m} />)
+                                )}
+                                <label className="check">
+                                    <input type="checkbox" checked={confirmed} disabled={!previewed}
+                                        onChange={(e) => setConfirmed(e.target.checked)} />
+                                    I checked the time zone and message order.
+                                </label>
+                                <button disabled={!previewed || !confirmed} onClick={enable}>Enable schedule</button>
+                                <p className="hint">Demo mode simulates sends. Live mode submits messages to the Hub. Keep the server running for scheduled messages to process.</p>
+                            </section>
+                        </div>
+                        <section className="panel queue">
+                            <div className="section-title">
+                                <span className="step">03</span>
+                                <div>
+                                    <h2>Your message queue</h2>
+                                    <p>Follow progress, edit a message or cancel a send.</p>
+                                </div>
+                                <button className="secondary" onClick={() => refresh().catch((e) => setNotice(e instanceof Error ? e.message : String(e)))}>Refresh</button>
                             </div>
-                        </div>
-                        <label>Group name
-                            <input value={groupName} onChange={(e) => { setGroupName(e.target.value); invalidate(); }} />
-                        </label>
-                        <label>Destination Matrix room ID
-                            <input placeholder="!your-test-room:matrix.campaignlab.uk"
-                                value={roomId} onChange={(e) => { setRoomId(e.target.value); invalidate(); }} />
-                        </label>
-                        <p className="hint">Use the bridged room ID from the Chat Hackers dashboard. Check that it belongs to your intended WhatsApp group.</p>
-                        <label>Preview time zone
-                            <select value={timezone} onChange={(e) => { setTimezone(e.target.value); invalidate(); }}>
-                                {TIMEZONES.map(tz => <option key={tz}>{tz}</option>)}
-                            </select>
-                        </label>
-                        <div className="upload">
-                            <strong>Bring your messages</strong>
-                            <p>Upload a CSV, or paste it below.</p>
-                            <input type="file" accept=".csv,text/csv" aria-label="Upload messages CSV"
-                                onChange={(e) => loadFile(e.target.files)} />
-                            <button className="secondary" onClick={loadSample}>Load demo messages</button>
-                        </div>
-                        <label>CSV contents
-                            <textarea rows={8} placeholder={"timestamp,message\n2026-10-17T18:00:00+01:00,Welcome everyone!"}
-                                value={csv} onChange={(e) => { setCsv(e.target.value); invalidate(); }} />
-                        </label>
-                        <p className="hint">Columns: timestamp,message. Include an explicit UTC offset or Z in every timestamp. The time zone above controls the preview; it does not reinterpret your CSV.</p>
-                        <button onClick={doPreview}>Preview messages →</button>
-                    </section>
-                    <section className="panel">
-                        <div className="section-title">
-                            <span className="step">02</span>
-                            <div>
-                                <h2>Check before you send</h2>
-                                <p>Review destination, local times and message order.</p>
-                            </div>
-                        </div>
-                        {previewList.length === 0 ? (
-                            <div className="empty">Your messages will appear here.<br /><small>Upload a CSV to put your plan in order.</small></div>
-                        ) : (
-                            previewList.map(m => <MessageCard key={m.id} message={m} />)
-                        )}
-                        <label className="check">
-                            <input type="checkbox" checked={confirmed} disabled={!previewed}
-                                onChange={(e) => setConfirmed(e.target.checked)} />
-                            I checked the destination group, time zone and message order.
-                        </label>
-                        <button disabled={!previewed || !confirmed} onClick={enable}>Enable schedule</button>
-                        <p className="hint">Demo mode simulates sends. Live mode submits messages to the Hub. Keep the server running for scheduled messages to process.</p>
-                    </section>
-                </div>
-                <section className="panel queue">
-                    <div className="section-title">
-                        <span className="step">03</span>
-                        <div>
-                            <h2>Your message queue</h2>
-                            <p>Follow progress, edit a message or cancel a send.</p>
-                        </div>
-                        <button className="secondary" onClick={() => refresh().catch((e) => setNotice(e instanceof Error ? e.message : String(e)))}>Refresh</button>
-                    </div>
-                    {!connected ? (
-                        <div className="empty">Connect to see your queue.</div>
-                    ) : queue.length === 0 ? (
-                        <div className="empty">A clear queue. Your next plan starts above.</div>
-                    ) : (
-                        queue.map(m => <MessageCard key={m.id} message={m} onEdit={openEdit} onCancel={doCancel} />)
-                    )}
-                    <p className="hint">Accepted = the Hub accepted the request, not confirmed WhatsApp delivery. Uncertain sends are never retried automatically. Check the group before scheduling a replacement.</p>
-                </section>
+                            {queue.length === 0 ? (
+                                <div className="empty">A clear queue. Your next plan starts above.</div>
+                            ) : (
+                                queue.map(m => <MessageCard key={m.id} message={m} onEdit={openEdit} onCancel={doCancel} />)
+                            )}
+                            <p className="hint">Accepted = the Hub accepted the request, not confirmed WhatsApp delivery. Uncertain sends are never retried automatically. Check the group before scheduling a replacement.</p>
+                        </section>
+                    </>
+                )}
                 <footer>CHAT HACKERS / CAMPAIGN LAB <span>Built for thoughtful organising.</span></footer>
             </main>
             {editing && (

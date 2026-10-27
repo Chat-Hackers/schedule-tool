@@ -19,7 +19,6 @@ export type MessageStatus =
 export type ScheduledMessage = {
     id: string;
     roomId: string;
-    groupName: string;
     timezone: string;
     message: string;
     at: string;

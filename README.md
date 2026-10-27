@@ -10,7 +10,7 @@ This tool schedules organiser messages to a group chat. Open the dashboard, uplo
 1. Run the command `npm install`
 1. Run the command `npm run dev`
 1. Copy the `schedule.json` file and paste into the `registrations` folder of [the wrapper project](https://github.com/chat-hackers/tool-hub)
-1. Open http://localhost:5062, enter the organiser token printed in the terminal and queue a test message
+1. Open the dashboard from the hub (the room ID arrives as the `roomId` query parameter) and queue a test message
 1. Marvel in delight at your newfound power
 
 ## CSV format
@@ -21,7 +21,7 @@ timestamp,message
 2099-10-17T18:15:00+01:00,The event starts in 15 minutes.
 ```
 
-Timestamps require an explicit offset or Z. The selected IANA time zone is for display, including daylight-saving changes. Preview blocks past timestamps, missing messages, and identical message/time/destination combinations in the upload or existing queue (except cancelled entries). Maximum 500 messages per import. Review the Matrix room ID against the intended WhatsApp group; the app cannot independently resolve group names.
+Timestamps require an explicit offset or Z. The selected IANA time zone is for display, including daylight-saving changes. Preview blocks past timestamps, missing messages, and identical message/time/destination combinations in the upload or existing queue (except cancelled entries). Maximum 500 messages per import. The destination room comes from the dashboard URL's `roomId` parameter; the group name is fetched from the Hub for display.
 
 ## Environment
 
@@ -31,12 +31,9 @@ Copy `.env.example` to `.env`:
 | --- | --- |
 | `schedule_secret` | Shared secret the Hub uses to authenticate sends from this tool |
 | `dashboard_url` | Tool Hub origin, e.g. `your-hub.example` or `localhost:8138` |
-| `ADMIN_TOKEN` | Organiser dashboard access token; long random value when exposed |
-| `DEFAULT_ROOM_ID` | Optional pre-filled destination room ID |
 | `SEND_MODE` | `live` to enable real sends; anything else is demo |
 | `DUCKDB_DATA_DIR` | Directory for `schedule_duckdb.db`; defaults to the repo root |
-
-The dashboard API (`/api/*`) requires the `ADMIN_TOKEN` bearer token. Unlike the other tools, which mutate state only via chat commands proxied by the Hub, this tool accepts "send arbitrary messages to any room" over HTTP and is designed to be tunnelled public — hence the extra auth layer.
+| `PORT` | Dashboard/server port; defaults to 5062 |
 
 ## Delivery states
 
@@ -60,6 +57,6 @@ The dashboard API (`/api/*`) requires the `ADMIN_TOKEN` bearer token. Unlike the
 npm test
 ```
 
-Tests cover quoted CSV parsing, explicit offsets, past times, duplicates, rejected Hub responses, API access control, preview/queue/edit/cancel, simulated scheduling and durable queue data. Browser rendering and real WhatsApp delivery require separate checks.
+Tests cover quoted CSV parsing, explicit offsets, past times, duplicates, rejected Hub responses, preview/queue/edit/cancel, simulated scheduling and durable queue data. Browser rendering and real WhatsApp delivery require separate checks.
 
 Context: [Chat Hackers](https://github.com/Chat-Hackers), [events-tool](https://github.com/Chat-Hackers/events-tool), [tool-hub](https://github.com/Chat-Hackers/tool-hub).

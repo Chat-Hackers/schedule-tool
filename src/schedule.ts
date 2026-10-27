@@ -14,7 +14,6 @@ export type PreviewRow = {
 
 export type PreviewInput = {
     roomId?: unknown;
-    groupName?: unknown;
     timezone?: unknown;
     rows?: PreviewRow[];
 };
@@ -52,7 +51,7 @@ export function fingerprint(m: { roomId: string; message: string; at: string }):
 }
 
 export function preview(input: PreviewInput, existing: ScheduledMessage[] = [], now = Date.now()): ScheduledMessage[] {
-    const { roomId, groupName, timezone, rows } = input;
+    const { roomId, timezone, rows } = input;
     if (typeof roomId !== "string" || !roomId.trim()) throw Error("Enter a destination room ID");
     new Intl.DateTimeFormat("en-GB", { timeZone: timezone as string }).format();
     if (!Array.isArray(rows) || !rows.length || rows.length > MAX_MESSAGES) throw Error("Upload between 1 and 500 messages");
@@ -67,7 +66,6 @@ export function preview(input: PreviewInput, existing: ScheduledMessage[] = [], 
         const m: ScheduledMessage = {
             id: randomUUID(),
             roomId: roomId.trim(),
-            groupName: String(groupName || roomId),
             timezone: timezone as string,
             message: String(r.message || "").trim(),
             at,

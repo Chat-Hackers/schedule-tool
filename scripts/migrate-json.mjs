@@ -31,19 +31,18 @@ for (const m of rows) {
     if (Number(count) > 0) continue;
 
     const insert = await connection.prepare(
-        "INSERT INTO Messages values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);"
+        "INSERT INTO Messages values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);"
     );
     insert.bindVarchar(1, m.id);
     insert.bindVarchar(2, m.roomId);
-    insert.bindVarchar(3, m.groupName ?? m.roomId);
-    insert.bindVarchar(4, m.timezone ?? "Europe/London");
-    insert.bindVarchar(5, m.message ?? "");
-    insert.bindVarchar(6, m.at ?? "");
-    insert.bindVarchar(7, m.status ?? "cancelled");
-    insert.bindVarchar(8, m.mode ?? "demo");
-    insert.bindVarchar(9, m.error ?? "");
-    insert.bindVarchar(10, m.createdAt ?? "");
-    insert.bindVarchar(11, m.completedAt ?? "");
+    insert.bindVarchar(3, m.timezone ?? "Europe/London");
+    insert.bindVarchar(4, m.message ?? "");
+    insert.bindVarchar(5, m.at ?? "");
+    insert.bindVarchar(6, m.status ?? "cancelled");
+    insert.bindVarchar(7, m.mode ?? "demo");
+    insert.bindVarchar(8, m.error ?? "");
+    insert.bindVarchar(9, m.createdAt ?? "");
+    insert.bindVarchar(10, m.completedAt ?? "");
     await insert.run();
     inserted++;
 }

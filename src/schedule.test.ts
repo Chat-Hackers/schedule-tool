@@ -3,7 +3,7 @@ import { parseCSV, preview, fingerprint } from "./schedule";
 import { sendMessage } from "./requests";
 import { type ScheduledMessage } from "../types";
 
-const input = { roomId: "!test:example.org", groupName: "Test", timezone: "Europe/London", rows: [{ message: "Hello", timestamp: "2099-10-17T18:00:00+01:00" }] };
+const input = { roomId: "!test:example.org", timezone: "Europe/London", rows: [{ message: "Hello", timestamp: "2099-10-17T18:00:00+01:00" }] };
 
 describe("parseCSV", () => {
     test("supports BOM, commas, quotes and multiline messages", () => {
