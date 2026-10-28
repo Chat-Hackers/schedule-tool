@@ -1,98 +1,52 @@
-import { ToadScheduler, SimpleIntervalJob, Task } from 'toad-scheduler';
-import { getEventsAll, updateEvent } from './duckdb';
+import { ToadScheduler, SimpleIntervalJob, AsyncTask } from 'toad-scheduler';
+import { getMessagesAll, updateMessageStatus, updateMessageCompleted } from './duckdb';
 import { sendMessage } from "./requests";
-import { tryGetEvent } from './events';
 
-const MINUTES = 5;
+const MINUTES = 1;
 
-async function checkEvents() {
-    const eventUrls = await getEventsAll();
-    const upcomingEventUrls = eventUrls.filter(event => !event.past);
+async function checkMessages() {
+    const messages = await getMessagesAll();
 
-    const events = (
-        await Promise.all(
-            upcomingEventUrls.map(async (event) => {
-                const eventDetails = await tryGetEvent(event.event_url as string);
-                if (!eventDetails) return null;
-                return {
-                    name: eventDetails.name,
-                    startDate: eventDetails.startDate,
-                    roomId: event.room_id as string,
-                    url: event.event_url as string
-                };
-            })
-        )
-    ).filter((event) => event !== null);
+    const due = messages
+        .filter(message => message.status === "queued" && Date.parse(message.at) <= Date.now())
+        .sort((a, b) => a.at.localeCompare(b.at));
 
-    events.forEach(event => {
-        const start = Temporal.Instant.from(event.startDate);
-        const now = Temporal.Now.instant();
+    for (const message of due) {
+        await updateMessageStatus(message.id, "sending");
 
-        if (start.epochMilliseconds < now.epochMilliseconds) {
-            updateEvent(event.roomId, event.url, true)
-            return;
+        try {
+            await sendMessage(message.roomId, message.message);
+            await updateMessageCompleted(message.id, "accepted");
+        } catch (err) {
+            const error = err instanceof Error ? err.message : String(err);
+            await updateMessageCompleted(message.id, "uncertain", `${error}. No automatic retry; inspect the group before replacing.`);
         }
-
-        const diffSeconds = now.until(start).total("seconds");
-        const toleranceSeconds = MINUTES * 60;
-
-        const fourWeeksAway = diffSeconds - 4 * 7 * 24 * 60 * 60 >= 0 && diffSeconds - 4 * 7 * 24 * 60 * 60 <= toleranceSeconds;
-        const threeWeeksAway = diffSeconds - 3 * 7 * 24 * 60 * 60 >= 0 && diffSeconds - 3 * 7 * 24 * 60 * 60 <= toleranceSeconds;
-        const twoWeeksAway = diffSeconds - 2 * 7 * 24 * 60 * 60 >= 0 && diffSeconds - 2 * 7 * 24 * 60 * 60 <= toleranceSeconds;
-        const oneWeekAway = diffSeconds - 2 * 7 * 24 * 60 * 60 >= 0 && diffSeconds - 2 * 7 * 24 * 60 * 60 <= toleranceSeconds;
-        const threeDaysAway = diffSeconds - 3 * 24 * 60 * 60 >= 0 && diffSeconds - 3 * 24 * 60 * 60 <= toleranceSeconds;
-        const twoDaysAway = diffSeconds - 2 * 24 * 60 * 60 >= 0 && diffSeconds - 2 * 24 * 60 * 60 <= toleranceSeconds;
-        const oneDayAway = diffSeconds - 24 * 60 * 60 >= 0 && diffSeconds - 24 * 60 * 60 <= toleranceSeconds;
-        const oneHourAway = diffSeconds - 60 * 60 >= 0 && diffSeconds - 60 * 60 <= toleranceSeconds;
-        const happeningNow = diffSeconds >= 0 && diffSeconds <= toleranceSeconds;
-
-        if (fourWeeksAway)
-            sendMessage(event.roomId, `${event.name} will take place in 4 weeks! ${event.url}`);
-
-        if (threeWeeksAway)
-            sendMessage(event.roomId, `${event.name} will take place in 3 weeks! ${event.url}`);
-
-        if (twoWeeksAway)
-            sendMessage(event.roomId, `${event.name} will take place in 2 weeks! ${event.url}`);
-
-        if (oneWeekAway)
-            sendMessage(event.roomId, `${event.name} will take place in 1 week! ${event.url}`);
-
-        if (threeDaysAway)
-            sendMessage(event.roomId, `${event.name} will take place in 3 days! ${event.url}`);
-
-        if (twoDaysAway)
-            sendMessage(event.roomId, `${event.name} will take place in 2 days! ${event.url}`);
-
-        if (oneDayAway)
-            sendMessage(event.roomId, `${event.name} will take place tomorrow! ${event.url}`);
-
-        if (oneHourAway)
-            sendMessage(event.roomId, `${event.name} is starting in one hour! ${event.url}`);
-
-        if (happeningNow)
-            sendMessage(event.roomId, `${event.name} is happening now! ${event.url}`);
-
-    })
+    }
 }
 
 const beginSchedule = () => {
     const scheduler = new ToadScheduler();
 
-    const task = new Task('simple task', () => {
-        console.log('Checking events');
-
-        checkEvents()
-    });
+    const task = new AsyncTask(
+        'process-due-messages',
+        async () => {
+            await checkMessages();
+        },
+        (err) => {
+            console.error('Scheduled message job failed:', err);
+        }
+    );
 
     const job = new SimpleIntervalJob(
         { minutes: MINUTES, runImmediately: true },
         task,
-        { id: 'upcoming_events_check' }
+        { preventOverrun: true }
     );
 
-    //create and start jobs
     scheduler.addSimpleIntervalJob(job);
+
+    process.on('SIGTERM', () => scheduler.stop());
+    process.on('SIGINT', () => scheduler.stop());
 }
 
 export default beginSchedule;

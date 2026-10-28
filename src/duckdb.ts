@@ -1,23 +1,24 @@
 import { DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 import path from "node:path";
+import { MessageStatus, ScheduledMessage } from "../types";
 
 let connection: DuckDBConnection;
 let instance: DuckDBInstance;
 
 export async function startDuckDB() {
-    const eventsDuckDBFileName = "events_duckdb.db";
+    const scheduleDuckDBFileName = "schedule_duckdb.db";
 
     const dataDir = process.env.DUCKDB_DATA_DIR ?? path.resolve(__dirname, "../..");
-    const dbPath = path.join(dataDir, eventsDuckDBFileName);
+    const dbPath = path.join(dataDir, scheduleDuckDBFileName);
 
     instance = await DuckDBInstance.create(dbPath);
     connection = await instance.connect();
 
     const tables = [
         {
-            name: "Events",
+            name: "Messages",
             creationCommand:
-                "CREATE TABLE Events (room_id VARCHAR NOT NULL, event_url VARCHAR NOT NULL, past BOOLEAN NOT NULL);",
+                "CREATE TABLE Messages (id VARCHAR NOT NULL, room_id VARCHAR NOT NULL, timezone VARCHAR NOT NULL, message VARCHAR NOT NULL, send_at VARCHAR NOT NULL, status VARCHAR NOT NULL, error VARCHAR, created_at VARCHAR, completed_at VARCHAR);",
         }
     ]
 
@@ -36,50 +37,102 @@ export async function startDuckDB() {
     });
 }
 
-export async function getEventsAll() {
-    const getEvents = `SELECT * FROM Events;`;
-    const prepared = await connection.prepare(getEvents);
-    const eventsRows = await prepared.run();
-    const events = await eventsRows.getRowObjects();
-    return events;
+// DuckDB transactions are per connection, so two overlapping writes sharing one
+// connection would interleave their BEGIN/COMMIT. Run writes one at a time.
+let writeQueue: Promise<unknown> = Promise.resolve();
+
+export function withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+    const next = writeQueue.then(fn, fn);
+    writeQueue = next.catch(() => { });
+    return next;
 }
 
-export async function getEventsByRoomId(roomId: string) {
-    const getEvents = `SELECT * FROM Events WHERE room_id = $1;`;
-    const prepared = await connection.prepare(getEvents);
-    prepared.bindVarchar(1, roomId);
-    const eventsRows = await prepared.run();
-    const events = await eventsRows.getRowObjects();
-    return events;
+function rowToMessage(row: Record<string, unknown>): ScheduledMessage {
+    return {
+        id: row.id as string,
+        roomId: row.room_id as string,
+        timezone: row.timezone as string,
+        message: row.message as string,
+        at: row.send_at as string,
+        status: row.status as MessageStatus,
+        error: (row.error as string) ?? undefined,
+        createdAt: (row.created_at as string) ?? undefined,
+        completedAt: (row.completed_at as string) ?? undefined,
+    };
 }
 
-export async function insertEvent(roomId: string, url: string) {
-    const insertEvent = `INSERT INTO Events values ($1, $2, $3);`;
-    const prepared = await connection.prepare(insertEvent);
-    prepared.bindVarchar(1, roomId);
-    prepared.bindVarchar(2, url);
-    prepared.bindBoolean(3, false);
-    await prepared.run();
+export async function getMessagesAll(): Promise<ScheduledMessage[]> {
+    const getMessages = `SELECT * FROM Messages;`;
+    const prepared = await connection.prepare(getMessages);
+    const messagesRows = await prepared.run();
+    const messages = await messagesRows.getRowObjects();
+    return messages.map(rowToMessage);
+}
+
+export async function insertMessage(message: ScheduledMessage) {
+    const insert = `INSERT INTO Messages values ($1, $2, $3, $4, $5, $6, $7, $8, $9);`;
+    await withWriteLock(async () => {
+        const prepared = await connection.prepare(insert);
+        prepared.bindVarchar(1, message.id);
+        prepared.bindVarchar(2, message.roomId);
+        prepared.bindVarchar(3, message.timezone);
+        prepared.bindVarchar(4, message.message);
+        prepared.bindVarchar(5, message.at);
+        prepared.bindVarchar(6, message.status);
+        prepared.bindVarchar(7, message.error ?? "");
+        prepared.bindVarchar(8, message.createdAt ?? "");
+        prepared.bindVarchar(9, message.completedAt ?? "");
+        await prepared.run();
+    });
     return;
 }
 
-export async function updateEvent(roomId: string, url: string, past: boolean) {
-    const updateEvent = `UPDATE Events SET past = $3 WHERE room_id = $1 AND event_url = $2`;
-    const prepared = await connection.prepare(updateEvent);
-    prepared.bindVarchar(1, roomId);
-    prepared.bindVarchar(2, url);
-    prepared.bindBoolean(3, past);
-    await prepared.run();
+export async function updateMessageStatus(id: string, status: MessageStatus, error = "") {
+    const update = `UPDATE Messages SET status = $2, error = $3 WHERE id = $1;`;
+    await withWriteLock(async () => {
+        const prepared = await connection.prepare(update);
+        prepared.bindVarchar(1, id);
+        prepared.bindVarchar(2, status);
+        prepared.bindVarchar(3, error);
+        await prepared.run();
+    });
     return;
 }
 
-export async function removeEvent(roomId: string, url: string) {
-    const deleteEvent = `DELETE FROM Events WHERE room_id=$1 AND event_url=$2;`;
-    const prepared = await connection.prepare(deleteEvent);
-    prepared.bindVarchar(1, roomId);
-    prepared.bindVarchar(2, url);
-    await prepared.run();
+export async function updateMessageContent(id: string, message: string, at: string) {
+    const update = `UPDATE Messages SET message = $2, send_at = $3, status = $4, error = $5 WHERE id = $1;`;
+    await withWriteLock(async () => {
+        const prepared = await connection.prepare(update);
+        prepared.bindVarchar(1, id);
+        prepared.bindVarchar(2, message);
+        prepared.bindVarchar(3, at);
+        prepared.bindVarchar(4, "queued");
+        prepared.bindVarchar(5, "");
+        await prepared.run();
+    });
     return;
 }
 
-startDuckDB();
+export async function updateMessageCompleted(id: string, status: MessageStatus, error = "") {
+    const update = `UPDATE Messages SET status = $2, error = $3, completed_at = $4 WHERE id = $1;`;
+    await withWriteLock(async () => {
+        const prepared = await connection.prepare(update);
+        prepared.bindVarchar(1, id);
+        prepared.bindVarchar(2, status);
+        prepared.bindVarchar(3, error);
+        prepared.bindVarchar(4, new Date().toISOString());
+        await prepared.run();
+    });
+    return;
+}
+
+export async function removeMessage(id: string) {
+    const deleteMessage = `DELETE FROM Messages WHERE id = $1;`;
+    await withWriteLock(async () => {
+        const prepared = await connection.prepare(deleteMessage);
+        prepared.bindVarchar(1, id);
+        await prepared.run();
+    });
+    return;
+}
+
