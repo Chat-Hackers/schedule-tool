@@ -12,7 +12,7 @@ const { schedule_secret } = process.env;
 
 const port = Number(process.env.PORT) || 5062;
 
-const moduleRegistration = {
+const toolRegistration = {
   id: "schedule",
   uuid: uuidv4(),
   url: `http://localhost:${port}`,
@@ -21,11 +21,11 @@ const moduleRegistration = {
   title: "Message Scheduler",
   description: "Schedules organiser messages to the group at set times",
   secret: schedule_secret,
-  event_types: []
+  event_types: {}
 }
 
 function generateRegistrationFile() {
-  fs.writeFileSync(`./${moduleRegistration.id}.json`, JSON.stringify(moduleRegistration, null, 2));
+  fs.writeFileSync(`./${toolRegistration.id}.json`, JSON.stringify(toolRegistration, null, 2));
 }
 
 
